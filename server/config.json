@@ -1,0 +1,8 @@
+{
+  "spreadsheetId": "1mQvqrMkY-Q7T9BwFxeYCaWo9PPIGAET7gTF6Zrh8QXE",
+  "collectionSpreadsheetId": "13574a1BRR9Q4qK2FOtgoe0ZppASz5RJUVceXTozMmkA",
+  "sheetName": "Active client",
+  "authMode": "csv_url",
+  "csvPublishUrl": "",
+  "autoRefreshIntervalMinutes": 5
+}
