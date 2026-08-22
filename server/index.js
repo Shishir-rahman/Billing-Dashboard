@@ -5,8 +5,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchReceivablesData, fetchSubscriptionBillingData, fetchMonthlyCollectionData } from './googleSheetsService.js';
 
-
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const CONFIG_PATH = path.join(__dirname, 'config.json');
@@ -28,7 +26,8 @@ function readConfig() {
     console.error("Error reading config.json:", err);
   }
   return {
-    spreadsheetId: "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+    spreadsheetId: "1mQvqrMkY-Q7T9BwFxeYCaWo9PPIGAET7gTF6Zrh8QXE",
+    collectionSpreadsheetId: "13574a1BRR9Q4qK2FOtgoe0ZppASz5RJUVceXTozMmkA",
     sheetName: "Receivable Data",
     authMode: "sample_fallback",
     googleApiKey: "",
@@ -92,7 +91,7 @@ app.get('/api/subscription-billing', async (req, res) => {
 app.get('/api/monthly-collection', async (req, res) => {
   try {
     const config = readConfig();
-    const month = req.query.month || "July'26";
+    const month = req.query.month || "August'26";
     const result = await fetchMonthlyCollectionData(config, month);
     res.json(result);
   } catch (error) {
@@ -101,41 +100,34 @@ app.get('/api/monthly-collection', async (req, res) => {
   }
 });
 
-
-
-app.post('/api/refresh', async (req, res) => {
+// Settings Config API
+app.get('/api/config', (req, res) => {
   try {
     const config = readConfig();
-    const result = await fetchReceivablesData(config);
-    cachedData = result;
-    lastFetchTime = Date.now();
-    res.json({ message: "Data refreshed successfully", ...result });
+    const safeConfig = {
+      spreadsheetId: config.spreadsheetId || '',
+      collectionSpreadsheetId: config.collectionSpreadsheetId || '',
+      sheetName: config.sheetName || 'Receivable Data',
+      authMode: config.authMode || 'sample_fallback',
+      autoRefreshIntervalMinutes: config.autoRefreshIntervalMinutes || 5,
+      hasApiKey: Boolean(config.googleApiKey),
+      hasCsvUrl: Boolean(config.csvPublishUrl)
+    };
+    res.json(safeConfig);
   } catch (error) {
-    res.status(500).json({ error: "Refresh failed", details: error.message });
+    res.status(500).json({ error: "Failed to read configuration", details: error.message });
   }
-});
-
-app.get('/api/config', (req, res) => {
-  const config = readConfig();
-  // Sanitize config before returning to client (don't expose full API key string if present, mask it)
-  res.json({
-    spreadsheetId: config.spreadsheetId || '',
-    sheetName: config.sheetName || 'Receivable Data',
-    authMode: config.authMode || 'sample_fallback',
-    csvPublishUrl: config.csvPublishUrl || '',
-    hasApiKey: !!config.googleApiKey,
-    autoRefreshIntervalMinutes: config.autoRefreshIntervalMinutes || 5
-  });
 });
 
 app.post('/api/config', (req, res) => {
   try {
+    const { spreadsheetId, collectionSpreadsheetId, sheetName, authMode, googleApiKey, csvPublishUrl, autoRefreshIntervalMinutes } = req.body;
     const currentConfig = readConfig();
-    const { spreadsheetId, sheetName, authMode, googleApiKey, csvPublishUrl, autoRefreshIntervalMinutes } = req.body;
 
     const updatedConfig = {
       ...currentConfig,
       spreadsheetId: spreadsheetId !== undefined ? spreadsheetId : currentConfig.spreadsheetId,
+      collectionSpreadsheetId: collectionSpreadsheetId !== undefined ? collectionSpreadsheetId : currentConfig.collectionSpreadsheetId,
       sheetName: sheetName !== undefined ? sheetName : currentConfig.sheetName,
       authMode: authMode !== undefined ? authMode : currentConfig.authMode,
       csvPublishUrl: csvPublishUrl !== undefined ? csvPublishUrl : currentConfig.csvPublishUrl,
@@ -165,7 +157,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: "OK", company: "Sokrio Technologies Ltd", timestamp: new Date() });
 });
 
-// Serve static frontend in production or when client/dist exists
+// Serve static frontend in production or standalone mode
 const clientDistPath = path.join(__dirname, '../client/dist');
 if (fs.existsSync(clientDistPath)) {
   app.use(express.static(clientDistPath));
@@ -175,7 +167,11 @@ if (fs.existsSync(clientDistPath)) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`🚀 Sokrio AR Dashboard API Server running on port ${PORT}`);
-});
+// Only start standalone HTTP server if not running as Vercel serverless function
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Sokrio AR Dashboard API Server running on port ${PORT}`);
+  });
+}
 
+export default app;
