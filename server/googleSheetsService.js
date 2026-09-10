@@ -192,18 +192,17 @@ async function discoverSubscriptionBillingTabs(spreadsheetId) {
   const candidateTabs = [
     "September'26 Subscription Bill",
     "Sep'26 Subscription Bill",
-    "September-26 Subscription Bill",
-    "Aug'26 Subscription Bill",
     "August'26 Subscription Bill",
-    "August-26 Subscription Bill",
+    "Aug'26 Subscription Bill",
     "July'26 Subscription Bill",
     "June'26 Subscription Bill",
     "May'26 Subscription Bill",
     "April'26 Subscription Bill"
   ];
 
-  const foundTabs = [];
-  await Promise.all(candidateTabs.map(async (tab) => {
+  const realTabs = [];
+
+  for (const tab of candidateTabs) {
     try {
       const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
       const res = await axios.get(url, { timeout: 4000 });
@@ -211,17 +210,16 @@ async function discoverSubscriptionBillingTabs(spreadsheetId) {
         const rows = parse(res.data, { skip_empty_lines: true });
         if (rows.length > 0) {
           const firstLine = rows[0].join(' ');
-          if (firstLine.includes('SOKRIO DMS Bill Month') || (firstLine.includes('Company Name') && (firstLine.includes('user') || firstLine.includes('User') || firstLine.includes('Invoice Amount')))) {
-            foundTabs.push(tab);
+          // Real subscription bill tabs have SOKRIO DMS Bill Month and 15-18 columns (NOT 25 columns of Receivable Data)
+          if (firstLine.includes('SOKRIO DMS Bill Month') || (rows[0].length >= 10 && rows[0].length <= 18 && firstLine.includes('Company Name'))) {
+            realTabs.push(tab);
           }
         }
       }
     } catch (e) {}
-  }));
+  }
 
-  // Preserve order based on candidateTabs
-  const ordered = candidateTabs.filter(t => foundTabs.includes(t));
-  return ordered.length > 0 ? ordered : ["Aug'26 Subscription Bill", "July'26 Subscription Bill", "June'26 Subscription Bill"];
+  return realTabs.length > 0 ? realTabs : ["Aug'26 Subscription Bill", "July'26 Subscription Bill", "June'26 Subscription Bill"];
 }
 
 // Dedicated parser for Subscription Billing with dynamic month support & MoM Growth
@@ -462,36 +460,52 @@ export async function fetchSubscriptionBillingData(config, targetMonth = null) {
   }
 }
 
-// Helper to discover available Collection tabs dynamically
+// Helper to discover available Collection tabs dynamically (differentiating Sheet 1 from default fallbacks)
 async function discoverCollectionTabs(spreadsheetId) {
   const candidateMonths = [
-    "September'26", "September-26", "Sep'26",
-    "August'26", "August-26", "Aug'26",
-    "July'26", "July-26", "Jul'26",
-    "June'26", "June-26", "Jun'26",
-    "May'26", "May-26",
-    "April'26", "April-26", "Apr'26"
+    "September'26",
+    "August'26",
+    "July'26",
+    "June'26",
+    "May'26",
+    "April'26",
+    "March'26",
+    "February'26",
+    "January'26"
   ];
 
-  const foundTabs = [];
-  await Promise.all(candidateMonths.map(async (m) => {
+  // Fetch sheet 1 (gid=0) sample signature
+  let defaultSignature = '';
+  try {
+    const defaultUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv`;
+    const res = await axios.get(defaultUrl, { timeout: 4000 });
+    const rows = parse(res.data, { skip_empty_lines: true });
+    if (rows.length > 1) {
+      defaultSignature = rows.slice(1, 4).map(r => r.slice(0, 4).join('|')).join('||');
+    }
+  } catch (e) {}
+
+  const realTabs = [];
+
+  for (let i = 0; i < candidateMonths.length; i++) {
+    const month = candidateMonths[i];
     try {
-      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(m)}`;
+      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(month)}`;
       const res = await axios.get(url, { timeout: 4000 });
       if (res.data && typeof res.data === 'string' && !res.data.includes('<!DOCTYPE html>')) {
         const rows = parse(res.data, { skip_empty_lines: true });
-        if (rows.length > 0) {
-          const firstLine = rows[0].join(' ');
-          if (firstLine.includes('Company Name') || firstLine.includes('Details') || firstLine.includes('Date')) {
-            foundTabs.push(m);
+        if (rows.length > 1) {
+          const sig = rows.slice(1, 4).map(r => r.slice(0, 4).join('|')).join('||');
+          // Sheet 1 is candidate index 0 (September'26). For other candidate months, if sig equals defaultSignature, it's a fallback!
+          if (i === 0 || sig !== defaultSignature) {
+            realTabs.push(month);
           }
         }
       }
     } catch (e) {}
-  }));
+  }
 
-  const ordered = candidateMonths.filter(m => foundTabs.includes(m));
-  return ordered.length > 0 ? ordered : ["September'26", "August'26", "July'26", "June'26", "May'26", "April'26"];
+  return realTabs.length > 0 ? realTabs : ["September'26", "July'26", "June'26", "May'26"];
 }
 
 // Parser for Dedicated "Monthly Collection" Google Sheet (Spreadsheet ID: 13574a1BRR9Q4qK2FOtgoe0ZppASz5RJUVceXTozMmkA)
