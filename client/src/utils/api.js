@@ -8,16 +8,18 @@ export async function getReceivablesData(forceRefresh = false) {
   return await response.json();
 }
 
-export async function getSubscriptionBillingData() {
-  const response = await fetch('/api/subscription-billing');
+export async function getSubscriptionBillingData(selectedMonth = null) {
+  const query = selectedMonth ? `?month=${encodeURIComponent(selectedMonth)}` : '';
+  const response = await fetch(`/api/subscription-billing${query}`);
   if (!response.ok) {
     throw new Error(`Subscription billing API error: ${response.statusText}`);
   }
   return await response.json();
 }
 
-export async function getMonthlyCollectionData(selectedMonth = "July'26") {
-  const response = await fetch(`/api/monthly-collection?month=${encodeURIComponent(selectedMonth)}`);
+export async function getMonthlyCollectionData(selectedMonth = null) {
+  const query = selectedMonth ? `?month=${encodeURIComponent(selectedMonth)}` : '';
+  const response = await fetch(`/api/monthly-collection${query}`);
   if (!response.ok) {
     throw new Error(`Monthly collection API error: ${response.statusText}`);
   }

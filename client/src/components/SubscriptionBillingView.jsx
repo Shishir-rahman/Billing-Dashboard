@@ -19,6 +19,7 @@ import { formatBDT, formatPercent } from '../utils/formatters';
 import { getSubscriptionBillingData } from '../utils/api';
 
 export function SubscriptionBillingView({ onSelectClient }) {
+  const [selectedMonth, setSelectedMonth] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -28,14 +29,17 @@ export function SubscriptionBillingView({ onSelectClient }) {
   const [sortDirection, setSortDirection] = useState('desc');
 
   useEffect(() => {
-    loadSubscriptionData();
-  }, []);
+    loadSubscriptionData(selectedMonth);
+  }, [selectedMonth]);
 
-  const loadSubscriptionData = async () => {
+  const loadSubscriptionData = async (month) => {
     try {
       setLoading(true);
-      const res = await getSubscriptionBillingData();
+      const res = await getSubscriptionBillingData(month);
       setData(res);
+      if (!selectedMonth && res.selectedMonth) {
+        setSelectedMonth(res.selectedMonth);
+      }
       setLoading(false);
     } catch (err) {
       console.error(err);
@@ -44,10 +48,10 @@ export function SubscriptionBillingView({ onSelectClient }) {
     }
   };
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-        <p>Loading July'26 Subscription Bill and MoM Growth Analytics...</p>
+        <p>Loading Subscription Bill and MoM Growth Analytics...</p>
       </div>
     );
   }
@@ -56,14 +60,14 @@ export function SubscriptionBillingView({ onSelectClient }) {
     return (
       <div className="card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-danger)' }}>
         <p>Error: {error || 'Failed to load data'}</p>
-        <button className="btn btn-secondary" onClick={loadSubscriptionData} style={{ marginTop: '1rem' }}>
+        <button className="btn btn-secondary" onClick={() => loadSubscriptionData(selectedMonth)} style={{ marginTop: '1rem' }}>
           Retry Loading
         </button>
       </div>
     );
   }
 
-  const { summary, clientBills } = data;
+  const { summary, clientBills, availableMonths = [], monthName = "July 2026", previousMonthName = "June 2026" } = data;
 
   // Search & Status Filter
   let filteredList = clientBills.filter(c => {
@@ -106,10 +110,10 @@ export function SubscriptionBillingView({ onSelectClient }) {
       'Without VAT Amount (Net)',
       '5% VAT Amount',
       'Rate / User',
-      'Billable Users (July\'26)',
-      'June\'26 Users',
+      `Billable Users (${monthName})`,
+      `${previousMonthName} Users`,
       'User Change (Delta)',
-      'June\'26 Gross Amount',
+      `${previousMonthName} Gross Amount`,
       'Bill Growth (%)',
       'Payment Media'
     ];
@@ -134,7 +138,7 @@ export function SubscriptionBillingView({ onSelectClient }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Sokrio_July26_Subscription_Bill_${new Date().toISOString().slice(0,10)}.csv`);
+    link.setAttribute('download', `Sokrio_${monthName.replace(/\s+/g, '_')}_Subscription_Bill_${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -144,6 +148,62 @@ export function SubscriptionBillingView({ onSelectClient }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      {/* Month Selector Bar & Header */}
+      <div className="card" style={{ padding: '1rem 1.25rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(14, 165, 233, 0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justify: 'center',
+                color: 'var(--brand-primary)'
+              }}
+            >
+              <CreditCard size={20} />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 800, fontFamily: 'var(--font-family-heading)' }}>
+                {monthName} Subscription Bill & MoM Growth Ledger
+              </h2>
+              <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                Comparing active billed users & revenue of {monthName} vs baseline {previousMonthName}
+              </p>
+            </div>
+          </div>
+
+          {/* Month Selector Dropdown / Pills */}
+          {availableMonths.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)' }}>Select Month:</span>
+              <div style={{ display: 'flex', gap: '0.35rem', background: 'rgba(0,0,0,0.2)', padding: '0.2rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                {availableMonths.map((m, idx) => {
+                  const label = m.replace(' Subscription Bill', '');
+                  const isSelected = selectedMonth === m || (!selectedMonth && idx === 0);
+                  return (
+                    <button
+                      key={m}
+                      className={`btn ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ padding: '0.3rem 0.75rem', fontSize: '0.78rem' }}
+                      onClick={() => {
+                        setSelectedMonth(m);
+                        loadSubscriptionData(m);
+                      }}
+                    >
+                      {label} {idx === 0 ? '(Latest)' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Executive Summary Cards Strip */}
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
         {/* Card 1: Total Gross Invoice Amount */}
@@ -151,7 +211,7 @@ export function SubscriptionBillingView({ onSelectClient }) {
           className="kpi-card"
           style={{ '--kpi-accent': 'var(--brand-primary)', '--kpi-bg': 'rgba(14, 165, 233, 0.12)', cursor: 'pointer' }}
           onClick={() => setStatusFilter('ALL')}
-          title="Click to view all July'26 bills"
+          title={`Click to view all ${monthName} bills`}
         >
           <div className="kpi-header">
             <span className="kpi-title">TOTAL INVOICE AMOUNT</span>
@@ -251,12 +311,12 @@ export function SubscriptionBillingView({ onSelectClient }) {
           <div className="kpi-footer" style={{ justifyContent: 'space-between' }}>
             <span>Active Billed Users</span>
             <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>
-              +{summary.userGrowthDiff} Users vs June ({summary.userGrowthPercent.toFixed(1)}%)
+              +{summary.userGrowthDiff} Users vs {previousMonthName} ({summary.userGrowthPercent.toFixed(1)}%)
             </span>
           </div>
         </div>
 
-        {/* NEW Card 6: BILL AMOUNT GROWTH (vs Previous Month June'26) */}
+        {/* Card 6: BILL AMOUNT GROWTH vs Previous Month */}
         <div className="kpi-card" style={{ '--kpi-accent': isPositiveGrowth ? 'var(--color-success)' : 'var(--color-danger)', '--kpi-bg': isPositiveGrowth ? 'var(--color-success-bg)' : 'var(--color-danger-bg)' }}>
           <div className="kpi-header">
             <span className="kpi-title">MOM BILL AMOUNT GROWTH</span>
@@ -268,7 +328,7 @@ export function SubscriptionBillingView({ onSelectClient }) {
             {isPositiveGrowth ? '+' : ''}{formatBDT(summary.billGrowthDiff)}
           </div>
           <div className="kpi-footer" style={{ justifyContent: 'space-between' }}>
-            <span>vs June'26 ({formatBDT(summary.juneGrossInvoiceAmount)})</span>
+            <span>vs {previousMonthName} ({formatBDT(summary.juneGrossInvoiceAmount)})</span>
             <span style={{ color: isPositiveGrowth ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 700 }}>
               {isPositiveGrowth ? '+' : ''}{summary.billGrowthPercent.toFixed(2)}% Growth
             </span>
@@ -280,7 +340,7 @@ export function SubscriptionBillingView({ onSelectClient }) {
       <div className="card">
         <div className="card-header">
           <div>
-            <h3 className="card-title">Client-Wise July'26 Subscription Bill & Collection Ledger</h3>
+            <h3 className="card-title">Client-Wise {monthName} Subscription Bill & Collection Ledger</h3>
             <p className="card-subtitle">
               Showing {filteredList.length} Accounts ({statusFilter === 'ALL' ? 'All Paid & Due' : statusFilter} Filter Active)
             </p>
@@ -353,7 +413,7 @@ export function SubscriptionBillingView({ onSelectClient }) {
                   Users & MoM Change <ArrowUpDown size={12} />
                 </th>
                 <th className="sortable" onClick={() => handleSort('juneGrossAmount')}>
-                  June'26 Bill <ArrowUpDown size={12} />
+                  {previousMonthName} Bill <ArrowUpDown size={12} />
                 </th>
                 <th className="sortable" onClick={() => handleSort('billGrowthPercent')}>
                   Bill Growth (%) <ArrowUpDown size={12} />

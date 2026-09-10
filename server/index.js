@@ -75,11 +75,11 @@ app.get('/api/receivables', async (req, res) => {
   }
 });
 
-// Endpoint for July'26 Subscription Billing vs June'26 Growth
+// Endpoint for Subscription Billing vs MoM Growth
 app.get('/api/subscription-billing', async (req, res) => {
   try {
     const config = readConfig();
-    const result = await fetchSubscriptionBillingData(config);
+    const result = await fetchSubscriptionBillingData(config, req.query.month || null);
     res.json(result);
   } catch (error) {
     console.error("Error fetching subscription billing:", error);
@@ -91,7 +91,7 @@ app.get('/api/subscription-billing', async (req, res) => {
 app.get('/api/monthly-collection', async (req, res) => {
   try {
     const config = readConfig();
-    const month = req.query.month || "August'26";
+    const month = req.query.month || null;
     const result = await fetchMonthlyCollectionData(config, month);
     res.json(result);
   } catch (error) {

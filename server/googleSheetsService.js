@@ -187,33 +187,87 @@ export function processActiveClientSheet(rows) {
   }));
 }
 
-// Dedicated parser for "July'26 Subscription Bill" vs "June'26 Subscription Bill"
-export async function fetchSubscriptionBillingData(config) {
+// Helper to discover available Subscription Billing tabs dynamically
+async function discoverSubscriptionBillingTabs(spreadsheetId) {
+  const candidateTabs = [
+    "September'26 Subscription Bill",
+    "Sep'26 Subscription Bill",
+    "September-26 Subscription Bill",
+    "Aug'26 Subscription Bill",
+    "August'26 Subscription Bill",
+    "August-26 Subscription Bill",
+    "July'26 Subscription Bill",
+    "June'26 Subscription Bill",
+    "May'26 Subscription Bill",
+    "April'26 Subscription Bill"
+  ];
+
+  const foundTabs = [];
+  await Promise.all(candidateTabs.map(async (tab) => {
+    try {
+      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+      const res = await axios.get(url, { timeout: 4000 });
+      if (res.data && typeof res.data === 'string' && !res.data.includes('<!DOCTYPE html>')) {
+        const rows = parse(res.data, { skip_empty_lines: true });
+        if (rows.length > 0) {
+          const firstLine = rows[0].join(' ');
+          if (firstLine.includes('SOKRIO DMS Bill Month') || (firstLine.includes('Company Name') && (firstLine.includes('user') || firstLine.includes('User') || firstLine.includes('Invoice Amount')))) {
+            foundTabs.push(tab);
+          }
+        }
+      }
+    } catch (e) {}
+  }));
+
+  // Preserve order based on candidateTabs
+  const ordered = candidateTabs.filter(t => foundTabs.includes(t));
+  return ordered.length > 0 ? ordered : ["Aug'26 Subscription Bill", "July'26 Subscription Bill", "June'26 Subscription Bill"];
+}
+
+// Dedicated parser for Subscription Billing with dynamic month support & MoM Growth
+export async function fetchSubscriptionBillingData(config, targetMonth = null) {
   const spreadsheetId = config.spreadsheetId || "1mQvqrMkY-Q7T9BwFxeYCaWo9PPIGAET7gTF6Zrh8QXE";
 
   try {
-    const urlJul = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent("July'26 Subscription Bill")}`;
-    const urlJun = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent("June'26 Subscription Bill")}`;
+    const availableMonths = await discoverSubscriptionBillingTabs(spreadsheetId);
+    
+    // Pick target month or default to latest available month
+    const selectedMonthTab = (targetMonth && availableMonths.includes(targetMonth)) 
+      ? targetMonth 
+      : availableMonths[0];
 
-    const [resJul, resJun] = await Promise.all([
-      axios.get(urlJul, { timeout: 10000 }),
-      axios.get(urlJun, { timeout: 10000 }).catch(() => ({ data: '' }))
+    // Find index of selected tab to pick the next older tab for MoM comparison
+    const tabIdx = availableMonths.indexOf(selectedMonthTab);
+    const prevMonthTab = (tabIdx >= 0 && tabIdx + 1 < availableMonths.length) 
+      ? availableMonths[tabIdx + 1] 
+      : (availableMonths.find(m => m !== selectedMonthTab) || "June'26 Subscription Bill");
+
+    const urlCurr = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(selectedMonthTab)}`;
+    const urlPrev = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(prevMonthTab)}`;
+
+    const [resCurr, resPrev] = await Promise.all([
+      axios.get(urlCurr, { timeout: 10000 }),
+      axios.get(urlPrev, { timeout: 10000 }).catch(() => ({ data: '' }))
     ]);
 
-    const rowsJul = parse(resJul.data, { skip_empty_lines: true });
-    const rowsJun = resJun.data ? parse(resJun.data, { skip_empty_lines: true }) : [];
+    const rowsCurr = parse(resCurr.data, { skip_empty_lines: true });
+    const rowsPrev = resPrev.data ? parse(resPrev.data, { skip_empty_lines: true }) : [];
 
-    // Map June data for comparison
-    const juneMap = {};
-    rowsJun.slice(2).forEach(r => {
+    // Map previous month data for comparison
+    const prevMap = {};
+    rowsPrev.slice(2).forEach(r => {
       const company = (r[1] || '').trim();
       if (!company || company.toLowerCase().includes('total')) return;
       const amt = parseFloat((r[2] || '0').replace(/,/g, '')) || 0;
       const users = parseInt((r[6] || r[4] || '0').replace(/,/g, '')) || 0;
-      juneMap[company.toLowerCase()] = { company, amt, users };
+      prevMap[company.toLowerCase()] = { company, amt, users };
     });
 
-    // Parse July Subscription Bill rows
+    // Clean display month names
+    const monthName = selectedMonthTab.replace(' Subscription Bill', '').replace('-', "'");
+    const prevMonthName = prevMonthTab.replace(' Subscription Bill', '').replace('-', "'");
+
+    // Parse Subscription Bill rows for selected month
     const clientBills = [];
     let totalGrossAmount = 0;
     let totalWithoutVatAmount = 0;
@@ -234,7 +288,7 @@ export async function fetchSubscriptionBillingData(config) {
     let newTotalRevenue = 0;
     let sameCount = 0;
 
-    rowsJul.slice(2).forEach((r, idx) => {
+    rowsCurr.slice(2).forEach((r, idx) => {
       const company = (r[1] || '').trim();
       if (!company || company.toLowerCase().includes('total')) return;
       const grossAmt = parseFloat((r[2] || '0').replace(/,/g, '')) || 0;
@@ -270,15 +324,15 @@ export async function fetchSubscriptionBillingData(config) {
           vatAmt = Math.round((grossAmt - withoutVat) * 100) / 100;
         }
 
-        const juneMatch = juneMap[company.toLowerCase()];
-        let juneGrossAmt = 0;
-        let juneUserCount = 0;
+        const prevMatch = prevMap[company.toLowerCase()];
+        let prevGrossAmt = 0;
+        let prevUserCount = 0;
         let amtGrowth = 0;
         let amtDiff = 0;
         let userDiff = 0;
         let trendStatus = 'SAME';
 
-        if (!juneMatch || juneMatch.amt === 0) {
+        if (!prevMatch || prevMatch.amt === 0) {
           trendStatus = 'NEW';
           newCount++;
           newTotalRevenue += grossAmt;
@@ -286,11 +340,11 @@ export async function fetchSubscriptionBillingData(config) {
           userDiff = users;
           amtGrowth = 100;
         } else {
-          juneGrossAmt = juneMatch.amt;
-          juneUserCount = juneMatch.users;
-          amtDiff = grossAmt - juneGrossAmt;
-          userDiff = users - juneUserCount;
-          amtGrowth = juneGrossAmt > 0 ? ((grossAmt - juneGrossAmt) / juneGrossAmt) * 100 : 0;
+          prevGrossAmt = prevMatch.amt;
+          prevUserCount = prevMatch.users;
+          amtDiff = grossAmt - prevGrossAmt;
+          userDiff = users - prevUserCount;
+          amtGrowth = prevGrossAmt > 0 ? ((grossAmt - prevGrossAmt) / prevGrossAmt) * 100 : 0;
 
           if (amtDiff > 5 || userDiff > 0) {
             trendStatus = 'UP';
@@ -318,8 +372,8 @@ export async function fetchSubscriptionBillingData(config) {
           billableUsers: users,
           paymentMedia: media || 'Pending / Bank EFT',
           paymentStatus,
-          juneGrossAmount: juneGrossAmt,
-          juneUsers: juneUserCount,
+          juneGrossAmount: prevGrossAmt,
+          juneUsers: prevUserCount,
           billGrowthPercent: amtGrowth,
           billGrowthDiff: amtDiff,
           userGrowthDiff: userDiff,
@@ -333,33 +387,35 @@ export async function fetchSubscriptionBillingData(config) {
       }
     });
 
-    // June totals calculation with No VAT rule
-    let juneTotalGross = 0;
-    let juneTotalWithoutVat = 0;
-    Object.values(juneMap).forEach(c => {
-      juneTotalGross += c.amt;
+    // Previous month totals calculation
+    let prevTotalGross = 0;
+    let prevTotalWithoutVat = 0;
+    Object.values(prevMap).forEach(c => {
+      prevTotalGross += c.amt;
       if (isNoVatItem(c.company)) {
-        juneTotalWithoutVat += c.amt;
+        prevTotalWithoutVat += c.amt;
       } else {
-        juneTotalWithoutVat += Math.round((c.amt / 1.05) * 100) / 100;
+        prevTotalWithoutVat += Math.round((c.amt / 1.05) * 100) / 100;
       }
     });
-    let juneTotalUsers = Object.values(juneMap).reduce((sum, c) => sum + c.users, 0);
+    let prevTotalUsers = Object.values(prevMap).reduce((sum, c) => sum + c.users, 0);
 
-    const totalBillGrowthPercent = juneTotalGross > 0 ? ((totalGrossAmount - juneTotalGross) / juneTotalGross) * 100 : 0;
-    const totalBillGrowthDiff = totalGrossAmount - juneTotalGross;
+    const totalBillGrowthPercent = prevTotalGross > 0 ? ((totalGrossAmount - prevTotalGross) / prevTotalGross) * 100 : 0;
+    const totalBillGrowthDiff = totalGrossAmount - prevTotalGross;
 
-    const totalWithoutVatGrowthPercent = juneTotalWithoutVat > 0 ? ((totalWithoutVatAmount - juneTotalWithoutVat) / juneTotalWithoutVat) * 100 : 0;
-    const totalWithoutVatGrowthDiff = totalWithoutVatAmount - juneTotalWithoutVat;
+    const totalWithoutVatGrowthPercent = prevTotalWithoutVat > 0 ? ((totalWithoutVatAmount - prevTotalWithoutVat) / prevTotalWithoutVat) * 100 : 0;
+    const totalWithoutVatGrowthDiff = totalWithoutVatAmount - prevTotalWithoutVat;
 
-    const totalUserGrowthPercent = juneTotalUsers > 0 ? ((totalBillableUsers - juneTotalUsers) / juneTotalUsers) * 100 : 0;
-    const totalUserGrowthDiff = totalBillableUsers - juneTotalUsers;
+    const totalUserGrowthPercent = prevTotalUsers > 0 ? ((totalBillableUsers - prevTotalUsers) / prevTotalUsers) * 100 : 0;
+    const totalUserGrowthDiff = totalBillableUsers - prevTotalUsers;
 
     const collectionRatePercent = totalGrossAmount > 0 ? (totalPaidAmount / totalGrossAmount) * 100 : 0;
 
     return {
-      monthName: "July 2026",
-      previousMonthName: "June 2026",
+      selectedMonth: selectedMonthTab,
+      availableMonths,
+      monthName,
+      previousMonthName: prevMonthName,
       lastUpdated: new Date().toISOString(),
       summary: {
         totalClientsCount: clientBills.length,
@@ -385,10 +441,10 @@ export async function fetchSubscriptionBillingData(config) {
         newTotalRevenue,
         sameCount,
 
-        // Previous Month Baseline (June'26)
-        juneGrossInvoiceAmount: juneTotalGross,
-        juneWithoutVatAmount: juneTotalWithoutVat,
-        juneBillableUsers: juneTotalUsers,
+        // Previous Month Baseline
+        juneGrossInvoiceAmount: prevTotalGross,
+        juneWithoutVatAmount: prevTotalWithoutVat,
+        juneBillableUsers: prevTotalUsers,
 
         // Growth Metrics
         billGrowthPercent: totalBillGrowthPercent,
@@ -406,17 +462,55 @@ export async function fetchSubscriptionBillingData(config) {
   }
 }
 
+// Helper to discover available Collection tabs dynamically
+async function discoverCollectionTabs(spreadsheetId) {
+  const candidateMonths = [
+    "September'26", "September-26", "Sep'26",
+    "August'26", "August-26", "Aug'26",
+    "July'26", "July-26", "Jul'26",
+    "June'26", "June-26", "Jun'26",
+    "May'26", "May-26",
+    "April'26", "April-26", "Apr'26"
+  ];
+
+  const foundTabs = [];
+  await Promise.all(candidateMonths.map(async (m) => {
+    try {
+      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(m)}`;
+      const res = await axios.get(url, { timeout: 4000 });
+      if (res.data && typeof res.data === 'string' && !res.data.includes('<!DOCTYPE html>')) {
+        const rows = parse(res.data, { skip_empty_lines: true });
+        if (rows.length > 0) {
+          const firstLine = rows[0].join(' ');
+          if (firstLine.includes('Company Name') || firstLine.includes('Details') || firstLine.includes('Date')) {
+            foundTabs.push(m);
+          }
+        }
+      }
+    } catch (e) {}
+  }));
+
+  const ordered = candidateMonths.filter(m => foundTabs.includes(m));
+  return ordered.length > 0 ? ordered : ["September'26", "August'26", "July'26", "June'26", "May'26", "April'26"];
+}
+
 // Parser for Dedicated "Monthly Collection" Google Sheet (Spreadsheet ID: 13574a1BRR9Q4qK2FOtgoe0ZppASz5RJUVceXTozMmkA)
-export async function fetchMonthlyCollectionData(config, selectedMonth = "August'26") {
+export async function fetchMonthlyCollectionData(config, selectedMonth = null) {
   const collectionSpreadsheetId = config.collectionSpreadsheetId || "13574a1BRR9Q4qK2FOtgoe0ZppASz5RJUVceXTozMmkA";
-  const availableMonths = ["August'26", "July'26", "June'26", "May'26", "April'26"];
+  const availableMonths = await discoverCollectionTabs(collectionSpreadsheetId);
+
+  // Default to the latest month tab (September'26 if available)
+  const activeMonth = (selectedMonth && availableMonths.includes(selectedMonth))
+    ? selectedMonth
+    : availableMonths[0];
 
   try {
-    let csvUrl = `https://docs.google.com/spreadsheets/d/${collectionSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(selectedMonth)}`;
+    let csvUrl = `https://docs.google.com/spreadsheets/d/${collectionSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(activeMonth)}`;
     
-    if (selectedMonth === "August'26") {
+    // Fallbacks for default/legacy gid parameters if needed
+    if (!selectedMonth && activeMonth === "September'26") {
       csvUrl = `https://docs.google.com/spreadsheets/d/${collectionSpreadsheetId}/gviz/tq?tqx=out:csv`;
-    } else if (selectedMonth === "July'26") {
+    } else if (activeMonth === "July'26") {
       csvUrl = `https://docs.google.com/spreadsheets/d/${collectionSpreadsheetId}/export?format=csv&gid=1821780275`;
     }
 
@@ -447,9 +541,9 @@ export async function fetchMonthlyCollectionData(config, selectedMonth = "August
           collections.push({
             id: idx + 1,
             clientName,
-            invoiceNo: details || `INV-COL-${selectedMonth.replace(/[^a-zA-Z0-9]/g, '')}-${idx + 1}`,
-            paymentDate: payDate || '01-Aug-26',
-            billingMonth: selectedMonth,
+            invoiceNo: details || `INV-COL-${activeMonth.replace(/[^a-zA-Z0-9]/g, '')}-${idx + 1}`,
+            paymentDate: payDate || '01-Sep-26',
+            billingMonth: activeMonth,
             grossPaymentAmount: grossAmt,
             tdsAmount: tdsAmt,
             vdsAmount: vdsAmt,
@@ -464,7 +558,7 @@ export async function fetchMonthlyCollectionData(config, selectedMonth = "August
       });
 
       return {
-        selectedMonth,
+        selectedMonth: activeMonth,
         availableMonths,
         source: `Google Sheet Live Sync (Spreadsheet ID: ${collectionSpreadsheetId})`,
         isLive: true,
@@ -479,14 +573,14 @@ export async function fetchMonthlyCollectionData(config, selectedMonth = "August
       };
     }
   } catch (err) {
-    console.warn(`Monthly Collection Sheet fetch error for ${selectedMonth}:`, err.message);
+    console.warn(`Monthly Collection Sheet fetch error for ${activeMonth}:`, err.message);
   }
 
   // Fallback
   return {
-    selectedMonth,
+    selectedMonth: activeMonth,
     availableMonths,
-    source: `Monthly Collection Engine (${selectedMonth})`,
+    source: `Monthly Collection Engine (${activeMonth})`,
     isLive: false,
     lastUpdated: new Date().toISOString(),
     summary: {

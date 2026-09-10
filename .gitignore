@@ -8,6 +8,7 @@ client/dist/
 dist/
 
 # Scratch & temporary test scripts
+scratch/
 server/test_*.js
 *.log
 

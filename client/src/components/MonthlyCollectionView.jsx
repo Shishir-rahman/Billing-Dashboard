@@ -18,7 +18,7 @@ import { formatBDT } from '../utils/formatters';
 import { getMonthlyCollectionData } from '../utils/api';
 
 export function MonthlyCollectionView({ onSelectClient }) {
-  const [selectedMonth, setSelectedMonth] = useState("August'26");
+  const [selectedMonth, setSelectedMonth] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -35,6 +35,9 @@ export function MonthlyCollectionView({ onSelectClient }) {
       setLoading(true);
       const res = await getMonthlyCollectionData(month);
       setData(res);
+      if (!selectedMonth && res.selectedMonth) {
+        setSelectedMonth(res.selectedMonth);
+      }
       setLoading(false);
     } catch (err) {
       console.error(err);
@@ -43,10 +46,10 @@ export function MonthlyCollectionView({ onSelectClient }) {
     }
   };
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-        <p>Loading {selectedMonth} Monthly Collection Ledger...</p>
+        <p>Loading Monthly Collection Ledger...</p>
       </div>
     );
   }
@@ -62,7 +65,8 @@ export function MonthlyCollectionView({ onSelectClient }) {
     );
   }
 
-  const { summary, collections, availableMonths } = data;
+  const { summary, collections, availableMonths = [] } = data;
+  const currentMonthLabel = data.selectedMonth || selectedMonth || "September'26";
 
   // Search & Filter
   let filteredList = collections.filter(c => {
@@ -158,10 +162,10 @@ export function MonthlyCollectionView({ onSelectClient }) {
             </div>
             <div>
               <h2 style={{ fontSize: '1.1rem', fontWeight: 800, fontFamily: 'var(--font-family-heading)' }}>
-                {selectedMonth} Monthly Collection Ledger
+                {currentMonthLabel} Monthly Collection Ledger
               </h2>
               <p style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                Showing total collection & bank deposit amount from Google Sheet (Default: Last Month {selectedMonth})
+                Showing total collection & bank deposit amount from Google Sheet ({currentMonthLabel})
               </p>
             </div>
           </div>
@@ -170,14 +174,17 @@ export function MonthlyCollectionView({ onSelectClient }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)' }}>Select Month:</span>
             <div style={{ display: 'flex', gap: '0.35rem', background: 'rgba(0,0,0,0.2)', padding: '0.2rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-              {availableMonths.map((m) => (
+              {availableMonths.map((m, idx) => (
                 <button
                   key={m}
-                  className={`btn ${selectedMonth === m ? 'btn-primary' : 'btn-secondary'}`}
+                  className={`btn ${currentMonthLabel === m ? 'btn-primary' : 'btn-secondary'}`}
                   style={{ padding: '0.3rem 0.75rem', fontSize: '0.78rem' }}
-                  onClick={() => setSelectedMonth(m)}
+                  onClick={() => {
+                    setSelectedMonth(m);
+                    loadCollectionData(m);
+                  }}
                 >
-                  {m} {m === "August'26" ? '(Last Month)' : ''}
+                  {m} {idx === 0 ? '(Latest)' : ''}
                 </button>
               ))}
             </div>
@@ -193,7 +200,7 @@ export function MonthlyCollectionView({ onSelectClient }) {
           style={{ '--kpi-accent': 'var(--color-success)', '--kpi-bg': 'var(--color-success-bg)' }}
         >
           <div className="kpi-header">
-            <span className="kpi-title">{selectedMonth} TOTAL COLLECTION</span>
+            <span className="kpi-title">{currentMonthLabel} TOTAL COLLECTION</span>
             <div className="kpi-icon-box">
               <CheckCircle2 size={18} />
             </div>
@@ -268,7 +275,7 @@ export function MonthlyCollectionView({ onSelectClient }) {
       <div className="card">
         <div className="card-header">
           <div>
-            <h3 className="card-title">{selectedMonth} Itemized Collection Transactions</h3>
+            <h3 className="card-title">{currentMonthLabel} Itemized Collection Transactions</h3>
             <p className="card-subtitle">
               Detailed Breakdown showing Payment Date, Client Name, Details, Collection Amount, TDS, VDS & Payment Media
             </p>

@@ -86,7 +86,7 @@ export default function App() {
       setIsRefreshing(true);
       const [res, collectionRes, subBillingRes] = await Promise.all([
         forceRefresh ? triggerDataRefresh() : getReceivablesData(),
-        getMonthlyCollectionData("August'26").catch(() => null),
+        getMonthlyCollectionData().catch(() => null),
         getSubscriptionBillingData().catch(() => null)
       ]);
       setRecords(res.data || []);
@@ -254,7 +254,7 @@ export default function App() {
           onClick={() => setActiveTab('subscription')}
         >
           <CreditCard size={16} />
-          July'26 Subscription Bill
+          {subscriptionBillingInfo?.monthName ? `${subscriptionBillingInfo.monthName} Subscription Bill` : "Subscription Bill"}
         </button>
         <button
           className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}

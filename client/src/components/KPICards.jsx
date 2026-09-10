@@ -3,12 +3,14 @@ import { DollarSign, CheckCircle2, AlertTriangle, Clock, Percent, ShieldAlert, A
 import { formatBDT, formatPercent } from '../utils/formatters';
 
 export function KPICards({ metrics, monthlyCollectionInfo, subscriptionBillingInfo, onCardClick }) {
-  const collectionAmt = monthlyCollectionInfo?.summary?.totalGrossCollected || 1086019;
-  const collectionMonth = monthlyCollectionInfo?.selectedMonth || "August'26";
+  const collectionAmt = monthlyCollectionInfo?.summary?.totalGrossCollected || 0;
+  const collectionMonth = monthlyCollectionInfo?.selectedMonth || "September'26";
 
-  const lastBillingMonthName = subscriptionBillingInfo?.monthName || "July 2026";
-  const lastBillingDueAmt = subscriptionBillingInfo?.summary?.totalDueAmount || 1324357.83;
-  const lastBillingDueCount = subscriptionBillingInfo?.summary?.dueClientsCount || 27;
+  const lastBillingMonthName = subscriptionBillingInfo?.monthName || "Aug 2026";
+  const lastBillingDueAmt = subscriptionBillingInfo?.summary?.totalDueAmount || 0;
+  const lastBillingDueCount = subscriptionBillingInfo?.summary?.dueClientsCount || 0;
+
+  const billingLabel = lastBillingMonthName.includes(' ') ? `${lastBillingMonthName.split(' ')[0]}'26` : lastBillingMonthName;
 
   const kpiItems = [
     {
@@ -33,9 +35,9 @@ export function KPICards({ metrics, monthlyCollectionInfo, subscriptionBillingIn
     },
     {
       id: 'current-due',
-      title: `Current Due (${lastBillingMonthName.split(' ')[0]}'26)`,
+      title: `Current Due (${billingLabel})`,
       value: formatBDT(lastBillingDueAmt),
-      subtext: `${lastBillingMonthName.split(' ')[0]}'26 Billing Outstanding (${lastBillingDueCount} Accounts)`,
+      subtext: `${billingLabel} Billing Outstanding (${lastBillingDueCount} Accounts)`,
       icon: Clock,
       accent: 'var(--color-info)',
       bg: 'var(--color-info-bg)',
