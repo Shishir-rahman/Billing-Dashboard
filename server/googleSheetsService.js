@@ -227,6 +227,8 @@ function buildCollectionPairs() {
   DISCOVERY_YEARS.forEach(yr => {
     DISCOVERY_MONTHS.forEach(m => {
       list.push({
+        monthObj: m,
+        year: yr,
         variants: [
           `${m.full}'${yr}`,
           `${m.abbr}'${yr}`,
@@ -526,20 +528,7 @@ export async function fetchSubscriptionBillingData(config, targetMonth = null) {
 async function discoverCollectionTabs(spreadsheetId) {
   const monthPairs = buildCollectionPairs();
 
-  // Fetch sheet 1 (gid=0) sample signature
-  let defaultSignature = '';
-  try {
-    const defaultUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv`;
-    const res = await axios.get(defaultUrl, { timeout: 4000 });
-    const rows = parse(res.data, { skip_empty_lines: true });
-    if (rows.length > 1) {
-      defaultSignature = rows.slice(1, 4).map(r => r.slice(0, 4).join('|')).join('||');
-    }
-  } catch (e) {}
-
-  let isFirstMatch = false;
-
-  const results = await Promise.all(monthPairs.map(async ({ variants }, idx) => {
+  const results = await Promise.all(monthPairs.map(async ({ monthObj, year, variants }, idx) => {
     for (const v of variants) {
       try {
         const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(v)}`;
@@ -547,9 +536,11 @@ async function discoverCollectionTabs(spreadsheetId) {
         if (res.data && typeof res.data === 'string' && !res.data.includes('<!DOCTYPE html>')) {
           const rows = parse(res.data, { skip_empty_lines: true });
           if (rows.length > 1) {
-            const sig = rows.slice(1, 4).map(r => r.slice(0, 4).join('|')).join('||');
-            if (!isFirstMatch || sig !== defaultSignature) {
-              isFirstMatch = true;
+            const dateStr = (rows[1][1] || '').toLowerCase();
+            const monthMatch = dateStr.includes(monthObj.abbr.toLowerCase()) || dateStr.includes(monthObj.full.toLowerCase());
+            const yearMatch = dateStr.includes(year);
+
+            if (monthMatch && yearMatch) {
               return { idx, tab: v };
             }
           }
@@ -560,7 +551,7 @@ async function discoverCollectionTabs(spreadsheetId) {
   }));
 
   const found = results.filter(Boolean).sort((a, b) => a.idx - b.idx).map(r => r.tab);
-  return found.length > 0 ? found : ["September'26", "Aug'26", "July'26", "June'26", "May'26"];
+  return found.length > 0 ? found : ["September'26", "Aug'26", "July'26", "June'26", "May'26", "Apr'26", "Mar'26", "Feb'26", "Jan'26"];
 }
 
 // Parser for Dedicated "Monthly Collection" Google Sheet (Spreadsheet ID: 13574a1BRR9Q4qK2FOtgoe0ZppASz5RJUVceXTozMmkA)
@@ -574,15 +565,7 @@ export async function fetchMonthlyCollectionData(config, selectedMonth = null) {
     : availableMonths[0];
 
   try {
-    let csvUrl = `https://docs.google.com/spreadsheets/d/${collectionSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(activeMonth)}`;
-    
-    // Fallbacks for default/legacy gid parameters if needed
-    if (!selectedMonth && activeMonth === "September'26") {
-      csvUrl = `https://docs.google.com/spreadsheets/d/${collectionSpreadsheetId}/gviz/tq?tqx=out:csv`;
-    } else if (activeMonth === "July'26") {
-      csvUrl = `https://docs.google.com/spreadsheets/d/${collectionSpreadsheetId}/export?format=csv&gid=1821780275`;
-    }
-
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${collectionSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(activeMonth)}`;
     const response = await axios.get(csvUrl, { timeout: 10000 });
 
     if (response.data && typeof response.data === 'string' && !response.data.includes('html')) {
