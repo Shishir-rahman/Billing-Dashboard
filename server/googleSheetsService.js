@@ -2,10 +2,28 @@ import axios from 'axios';
 import { parse } from 'csv-parse/sync';
 import { sampleReceivableData } from './sampleData.js';
 
-// Helper to check if item is Customization or Implementation (which has NO VAT = 0%)
+// Helper to check if item has NO VAT (0%).
+// Rule: Subscription Fee & Power BI HAVE 5% VAT.
+// Implementation, Customization, Mobilization, API Integration, Dashboard Bill, etc. DO NOT HAVE VAT (0%).
 function isNoVatItem(text = '') {
   const t = text.toLowerCase();
-  return t.includes('customization') || t.includes('implementation');
+  if (t.includes('power bi') || t.includes('powerbi') || t.includes('subscription fee')) {
+    return false;
+  }
+  return (
+    t.includes('customization') ||
+    t.includes('implementation') ||
+    t.includes('mobilization') ||
+    t.includes('api integration') ||
+    t.includes('api fee') ||
+    t.includes('dashboard bill') ||
+    t.includes('dashboard fee') ||
+    t.includes('setup fee') ||
+    t.includes('development fee') ||
+    t.includes('training fee') ||
+    t.includes('project fee') ||
+    t.includes('project (customization')
+  );
 }
 
 // Helper to determine aging category and days overdue from month text
