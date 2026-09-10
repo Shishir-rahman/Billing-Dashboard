@@ -354,10 +354,11 @@ export async function fetchSubscriptionBillingData(config, targetMonth = null) {
       const rate = parseFloat((r[3] || '0').replace(/,/g, '')) || 0;
       const users = parseInt((r[6] || r[4] || '0').replace(/,/g, '')) || 0;
       const media = (r[7] || '').trim();
+      const statusCol = (r[8] || '').trim();
 
       if (grossAmt > 0) {
-        // Status determination: if payment media recorded -> Paid, else Due
-        const isPaid = media.length > 0;
+        // Status determination: Check Column I (r[8]) and Column H (r[7]) for "Paid" or payment media
+        const isPaid = statusCol.toLowerCase().includes('paid') || media.toLowerCase().includes('paid') || (media.length > 0 && !media.toLowerCase().includes('due'));
         const paymentStatus = isPaid ? 'Paid' : 'Due';
 
         if (isPaid) {
