@@ -189,34 +189,38 @@ export function processActiveClientSheet(rows) {
 
 // Helper to discover available Subscription Billing tabs dynamically
 async function discoverSubscriptionBillingTabs(spreadsheetId) {
-  const candidateTabs = [
-    "September'26 Subscription Bill",
-    "Sep'26 Subscription Bill",
-    "August'26 Subscription Bill",
-    "Aug'26 Subscription Bill",
-    "July'26 Subscription Bill",
-    "June'26 Subscription Bill",
-    "May'26 Subscription Bill",
-    "April'26 Subscription Bill"
+  const monthPairs = [
+    { key: "September", variants: ["September'26 Subscription Bill", "Sep'26 Subscription Bill", "September-26 Subscription Bill"] },
+    { key: "August", variants: ["Aug'26 Subscription Bill", "August'26 Subscription Bill", "August-26 Subscription Bill"] },
+    { key: "July", variants: ["July'26 Subscription Bill", "Jul'26 Subscription Bill", "July-26 Subscription Bill"] },
+    { key: "June", variants: ["June'26 Subscription Bill", "Jun'26 Subscription Bill", "June-26 Subscription Bill"] },
+    { key: "May", variants: ["May'26 Subscription Bill", "May-26 Subscription Bill"] },
+    { key: "April", variants: ["April'26 Subscription Bill", "Apr'26 Subscription Bill", "April-26 Subscription Bill"] }
   ];
 
   const realTabs = [];
 
-  for (const tab of candidateTabs) {
-    try {
-      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
-      const res = await axios.get(url, { timeout: 4000 });
-      if (res.data && typeof res.data === 'string' && !res.data.includes('<!DOCTYPE html>')) {
-        const rows = parse(res.data, { skip_empty_lines: true });
-        if (rows.length > 0) {
-          const firstLine = rows[0].join(' ');
-          // Real subscription bill tabs have SOKRIO DMS Bill Month and 15-18 columns (NOT 25 columns of Receivable Data)
-          if (firstLine.includes('SOKRIO DMS Bill Month') || (rows[0].length >= 10 && rows[0].length <= 18 && firstLine.includes('Company Name'))) {
-            realTabs.push(tab);
+  for (const { variants } of monthPairs) {
+    let foundForMonth = null;
+    for (const tab of variants) {
+      try {
+        const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+        const res = await axios.get(url, { timeout: 4000 });
+        if (res.data && typeof res.data === 'string' && !res.data.includes('<!DOCTYPE html>')) {
+          const rows = parse(res.data, { skip_empty_lines: true });
+          if (rows.length > 0) {
+            const firstLine = rows[0].join(' ');
+            if (firstLine.includes('SOKRIO DMS Bill Month') || (rows[0].length >= 10 && rows[0].length <= 18 && firstLine.includes('Company Name'))) {
+              foundForMonth = tab;
+              break;
+            }
           }
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
+    if (foundForMonth) {
+      realTabs.push(foundForMonth);
+    }
   }
 
   return realTabs.length > 0 ? realTabs : ["Aug'26 Subscription Bill", "July'26 Subscription Bill", "June'26 Subscription Bill"];
@@ -462,16 +466,16 @@ export async function fetchSubscriptionBillingData(config, targetMonth = null) {
 
 // Helper to discover available Collection tabs dynamically (differentiating Sheet 1 from default fallbacks)
 async function discoverCollectionTabs(spreadsheetId) {
-  const candidateMonths = [
-    "September'26",
-    "August'26",
-    "July'26",
-    "June'26",
-    "May'26",
-    "April'26",
-    "March'26",
-    "February'26",
-    "January'26"
+  const monthPairs = [
+    { key: "September", variants: ["September'26", "Sep'26", "September-26"] },
+    { key: "August", variants: ["Aug'26", "August'26", "August-26"] },
+    { key: "July", variants: ["July'26", "Jul'26", "July-26"] },
+    { key: "June", variants: ["June'26", "Jun'26", "June-26"] },
+    { key: "May", variants: ["May'26", "May-26"] },
+    { key: "April", variants: ["April'26", "Apr'26", "April-26"] },
+    { key: "March", variants: ["March'26", "Mar'26", "March-26"] },
+    { key: "February", variants: ["February'26", "Feb'26", "February-26"] },
+    { key: "January", variants: ["January'26", "Jan'26", "January-26"] }
   ];
 
   // Fetch sheet 1 (gid=0) sample signature
@@ -487,25 +491,34 @@ async function discoverCollectionTabs(spreadsheetId) {
 
   const realTabs = [];
 
-  for (let i = 0; i < candidateMonths.length; i++) {
-    const month = candidateMonths[i];
-    try {
-      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(month)}`;
-      const res = await axios.get(url, { timeout: 4000 });
-      if (res.data && typeof res.data === 'string' && !res.data.includes('<!DOCTYPE html>')) {
-        const rows = parse(res.data, { skip_empty_lines: true });
-        if (rows.length > 1) {
-          const sig = rows.slice(1, 4).map(r => r.slice(0, 4).join('|')).join('||');
-          // Sheet 1 is candidate index 0 (September'26). For other candidate months, if sig equals defaultSignature, it's a fallback!
-          if (i === 0 || sig !== defaultSignature) {
-            realTabs.push(month);
+  for (let i = 0; i < monthPairs.length; i++) {
+    const { variants } = monthPairs[i];
+    let foundForMonth = null;
+
+    for (const v of variants) {
+      try {
+        const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(v)}`;
+        const res = await axios.get(url, { timeout: 4000 });
+        if (res.data && typeof res.data === 'string' && !res.data.includes('<!DOCTYPE html>')) {
+          const rows = parse(res.data, { skip_empty_lines: true });
+          if (rows.length > 1) {
+            const sig = rows.slice(1, 4).map(r => r.slice(0, 4).join('|')).join('||');
+            // Sheet 1 is candidate index 0 (September'26). For other candidate months, if sig equals defaultSignature, it's a fallback!
+            if (i === 0 || sig !== defaultSignature) {
+              foundForMonth = v;
+              break;
+            }
           }
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
+
+    if (foundForMonth) {
+      realTabs.push(foundForMonth);
+    }
   }
 
-  return realTabs.length > 0 ? realTabs : ["September'26", "July'26", "June'26", "May'26"];
+  return realTabs.length > 0 ? realTabs : ["September'26", "Aug'26", "July'26", "June'26", "May'26"];
 }
 
 // Parser for Dedicated "Monthly Collection" Google Sheet (Spreadsheet ID: 13574a1BRR9Q4qK2FOtgoe0ZppASz5RJUVceXTozMmkA)
