@@ -206,7 +206,7 @@ export function processActiveClientSheet(rows) {
 }
 
 // Dynamic Month Generator for future-proof tab discovery
-const DISCOVERY_YEARS = ['28', '27', '26', '25'];
+const DISCOVERY_YEARS = ['27', '26'];
 const DISCOVERY_MONTHS = [
   { full: "December", abbr: "Dec" },
   { full: "November", abbr: "Nov" },
@@ -225,22 +225,13 @@ const DISCOVERY_MONTHS = [
 function buildCollectionPairs() {
   const list = [];
   DISCOVERY_YEARS.forEach(yr => {
-    const fullYr = `20${yr}`;
     DISCOVERY_MONTHS.forEach(m => {
       list.push({
         variants: [
           `${m.full}'${yr}`,
           `${m.abbr}'${yr}`,
           `${m.full}-${yr}`,
-          `${m.abbr}-${yr}`,
-          `${m.full} ${yr}`,
-          `${m.abbr} ${yr}`,
-          `${m.full}'${fullYr}`,
-          `${m.abbr}'${fullYr}`,
-          `${m.full}-${fullYr}`,
-          `${m.abbr}-${fullYr}`,
-          `${m.full} ${fullYr}`,
-          `${m.abbr} ${fullYr}`
+          `${m.abbr}-${yr}`
         ]
       });
     });
@@ -251,22 +242,13 @@ function buildCollectionPairs() {
 function buildSubscriptionPairs() {
   const list = [];
   DISCOVERY_YEARS.forEach(yr => {
-    const fullYr = `20${yr}`;
     DISCOVERY_MONTHS.forEach(m => {
       list.push({
         variants: [
           `${m.full}'${yr} Subscription Bill`,
           `${m.abbr}'${yr} Subscription Bill`,
           `${m.full}-${yr} Subscription Bill`,
-          `${m.abbr}-${yr} Subscription Bill`,
-          `${m.full} ${yr} Subscription Bill`,
-          `${m.abbr} ${yr} Subscription Bill`,
-          `${m.full}'${fullYr} Subscription Bill`,
-          `${m.abbr}'${fullYr} Subscription Bill`,
-          `${m.full}-${fullYr} Subscription Bill`,
-          `${m.abbr}-${fullYr} Subscription Bill`,
-          `${m.full} ${fullYr} Subscription Bill`,
-          `${m.abbr} ${fullYr} Subscription Bill`
+          `${m.abbr}-${yr} Subscription Bill`
         ]
       });
     });
@@ -287,7 +269,7 @@ async function discoverSubscriptionBillingTabs(spreadsheetId) {
           const rows = parse(res.data, { skip_empty_lines: true });
           if (rows.length > 0) {
             const firstLine = rows[0].join(' ');
-            if (firstLine.includes('SOKRIO DMS Bill Month') || (rows[0].length >= 10 && rows[0].length <= 18 && firstLine.includes('Company Name'))) {
+            if (firstLine.includes('SOKRIO DMS Bill Month') && !firstLine.includes('Sl. No.')) {
               return { idx, tab };
             }
           }
@@ -298,7 +280,7 @@ async function discoverSubscriptionBillingTabs(spreadsheetId) {
   }));
 
   const found = results.filter(Boolean).sort((a, b) => a.idx - b.idx).map(r => r.tab);
-  return found.length > 0 ? found : ["Aug'26 Subscription Bill", "July'26 Subscription Bill", "June'26 Subscription Bill"];
+  return found.length > 0 ? found : ["Aug'26 Subscription Bill", "July'26 Subscription Bill", "June'26 Subscription Bill", "May'26 Subscription Bill", "Apr'26 Subscription Bill", "Mar'26 Subscription Bill", "Feb'26 Subscription Bill", "Jan'26 Subscription Bill"];
 }
 
 // Dedicated parser for Subscription Billing with dynamic month support & MoM Growth
@@ -330,9 +312,9 @@ export async function fetchSubscriptionBillingData(config, targetMonth = null) {
     const rowsCurr = parse(resCurr.data, { skip_empty_lines: true });
     const rowsPrev = resPrev.data ? parse(resPrev.data, { skip_empty_lines: true }) : [];
 
-    // Map previous month data for comparison
+    // Map previous month data for comparison (slice from index 1 to include row 1 client)
     const prevMap = {};
-    rowsPrev.slice(2).forEach(r => {
+    rowsPrev.slice(1).forEach(r => {
       const company = (r[1] || '').trim();
       if (!company || company.toLowerCase().includes('total')) return;
       const amt = parseFloat((r[2] || '0').replace(/,/g, '')) || 0;
@@ -365,7 +347,7 @@ export async function fetchSubscriptionBillingData(config, targetMonth = null) {
     let newTotalRevenue = 0;
     let sameCount = 0;
 
-    rowsCurr.slice(2).forEach((r, idx) => {
+    rowsCurr.slice(1).forEach((r, idx) => {
       const company = (r[1] || '').trim();
       if (!company || company.toLowerCase().includes('total')) return;
       const grossAmt = parseFloat((r[2] || '0').replace(/,/g, '')) || 0;
